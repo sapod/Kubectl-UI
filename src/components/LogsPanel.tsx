@@ -548,6 +548,36 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
         return firstPod?.containers?.map(c => c.name).sort() ?? [];
     }, [selectedWorkload, state.pods, state.deployments, state.daemonSets, state.statefulSets]);
 
+    // Shared helper to fetch log lines for both display and download
+    const fetchLogLines = async (
+        pod: string,
+        container: string | undefined,
+        namespace: string,
+        workloadName: string,
+        showPrevious: boolean,
+        unlimited: boolean,
+        validateOptions?: { skipValidation?: boolean; autoSwitch?: boolean; userMessage?: string; action?: string }
+    ): Promise<string[] | undefined> => {
+        if (pod === 'all-pods') {
+            const selector = buildWorkloadSelector(namespace, workloadName);
+            if (!selector) return;
+            return await kubectl.getDeploymentLogs(selector, namespace, container || undefined, searchQuery, appliedDateFrom, appliedDateTo, unlimited);
+        }
+
+        if (!pod || !container) return;
+        const [podNamespace, podName] = pod.split('/');
+
+        if (!validateOptions?.skipValidation && !validatePodExists(pod, {
+            autoSwitch: validateOptions?.autoSwitch ?? false,
+            userMessage: validateOptions?.userMessage,
+            action: validateOptions?.action,
+        })) {
+            return;
+        }
+
+        return await kubectl.getLogs(podName, podNamespace, container, showPrevious, searchQuery, appliedDateFrom, appliedDateTo, unlimited);
+    };
+
     // Fetch logs function
     const fetchLogs = async () => {
         // Use the latest values from ref to avoid stale closures
@@ -681,32 +711,19 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
         };
 
         try {
-            let lines: string[];
-
-            if (latest.pod === 'all-pods') {
-                // Fetch all pods logs using workload's label selector, optionally filtered by container
-                const selector = buildWorkloadSelector(namespace, workloadName);
-                if (!selector) return;
-                lines = await kubectl.getDeploymentLogs(selector, namespace, latest.container || undefined, searchQuery, appliedDateFrom, appliedDateTo);
-            } else {
-                // Regular pod logs
-                if (!latest.pod || !latest.container) return;
-                const [podNamespace, podName] = latest.pod.split('/');
-
+            const lines = await fetchLogLines(
+                latest.pod,
+                latest.container,
+                namespace,
+                workloadName,
+                showPrevious,
+                false,
                 // Validate that the pod still exists
                 // BUT skip validation if this pod is explicitly selected in logs tab
-                const isFromLogsTab = currentTab?.selectedPod === latest.pod;
+                { skipValidation: currentTab?.selectedPod === latest.pod, autoSwitch: true, action: 'fetch logs' }
+            );
 
-                if (!isFromLogsTab && !validatePodExists(latest.pod, {
-                    autoSwitch: true,
-                    action: 'fetch logs'
-                })) {
-                    // Pod doesn't exist, validatePodExists already handled it
-                    return;
-                }
-
-                lines = await kubectl.getLogs(podName, podNamespace, latest.container, showPrevious, searchQuery, appliedDateFrom, appliedDateTo);
-            }
+            if (!lines) return;
 
             processLogs(lines);
         } catch (e) {
@@ -743,31 +760,18 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
         setDownloadingLogs(true);
         try {
             const [namespace, workloadName] = selectedWorkload.split('/');
-            let lines: string[];
 
-            // Fetch all logs with unlimited flag
-            if (selectedPod === 'all-pods') {
-                const selector = buildWorkloadSelector(namespace, workloadName);
-                if (!selector) return;
-                lines = await kubectl.getDeploymentLogs(selector, namespace, selectedContainer || undefined, searchQuery, appliedDateFrom, appliedDateTo, true);
-            } else if (selectedPod && selectedContainer) {
-                const [podNamespace, podName] = selectedPod.split('/');
+            const lines = await fetchLogLines(
+                selectedPod ?? '',
+                selectedContainer,
+                namespace,
+                workloadName,
+                showPrevious,
+                true,
+                { autoSwitch: false, userMessage: '⚠️ Cannot download logs: Pod no longer exists. Please select a different pod or use all-pods mode.', action: 'download logs' }
+            );
 
-                // Validate that the pod still exists
-                if (!validatePodExists(selectedPod, {
-                    autoSwitch: false,
-                    userMessage: '⚠️ Cannot download logs: Pod no longer exists. Please select a different pod or use all-pods mode.',
-                    action: 'download logs'
-                })) {
-                    // Pod doesn't exist, validatePodExists already handled it
-                    setDownloadingLogs(false);
-                    return;
-                }
-
-                lines = await kubectl.getLogs(podName, podNamespace, selectedContainer, showPrevious, searchQuery, appliedDateFrom, appliedDateTo, true);
-            } else {
-                return;
-            }
+            if (!lines) return;
 
             // Create filename with timestamp and filter info
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
