@@ -4,6 +4,7 @@ import { useStore } from '../store';
 import { RefreshCw, Search, X, AlertTriangle, Calendar, Download, Play, Pause, Minus } from 'lucide-react';
 import { kubectl } from '../services/kubectl';
 import { ScrollToBottomPill } from './ScrollToBottomPill';
+import ClearButton from './ClearButton';
 
 // Maximum number of log lines to keep in memory
 const MAX_LOG_LINES = 5000;
@@ -1399,6 +1400,8 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
                             >
                                 <Download size={14} className={downloadingLogs ? "animate-spin" : ""} />
                             </button>
+
+                            <ClearButton lineCount={logLines.length} onClear={() => setLogLines([])} />
 
                             {/* Lines count indicator */}
                             {logLines.length > 0 && (
