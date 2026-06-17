@@ -155,6 +155,7 @@ spec:
   selector:
     matchLabels:
       app: backend-api
+      tier: backend
   template:
     metadata:
       labels:
