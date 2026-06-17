@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useState, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { useStore } from '../store';
-import { RefreshCw, Search, X, AlertTriangle, Calendar, Download, Play, Pause } from 'lucide-react';
+import { RefreshCw, Search, X, AlertTriangle, Calendar, Download, Play, Pause, Minus } from 'lucide-react';
 import { kubectl } from '../services/kubectl';
 
 // Maximum number of log lines to keep in memory
@@ -796,6 +796,31 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
         }
     };
 
+    // Add a visual marker line at the end of current logs to track new additions
+    const addMarker = () => {
+        const now = new Date();
+        const timestamp = now.toLocaleString(undefined, {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+        });
+        const markerLine = `────────────────────────────────────────────────────────────────── ── Marker at ${timestamp} ──`;
+        setLogLines(prev => {
+            const updated = [...prev, markerLine];
+            if (updated.length > MAX_LOG_LINES) {
+                return updated.slice(updated.length - MAX_LOG_LINES);
+            }
+            return updated;
+        });
+        // Auto-scroll to bottom to show the marker
+        if (logsContainerRef.current && isScrolledToBottomRef.current) {
+            setTimeout(() => {
+                if (logsContainerRef.current) {
+                    logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
+                }
+            }, 100);
+        }
+    };
+
     // Track previous values to detect context changes vs search changes
     const prevDeploymentRef = useRef(selectedWorkload);
     const prevPodRef = useRef(selectedPod);
@@ -1346,6 +1371,15 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
                                 title="Filter by date range"
                             >
                                 <Calendar size={14} />
+                            </button>
+
+                            <button
+                                onClick={addMarker}
+                                className="p-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-gray-400 hover:text-white transition-colors"
+                                title="Add marker line at current end of logs"
+                                disabled={!selectedWorkload || logLines.length === 0}
+                            >
+                                <Minus size={14} />
                             </button>
 
                             <button
