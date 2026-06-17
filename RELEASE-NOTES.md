@@ -1,17 +1,19 @@
 # Release Notes
 
-## Version 2.8.1
+## Version 2.9.0
 
 ### Features
-- Console header now hidden when add cluster dialog is open
-- Full light theme support
+- Added ClearButton component to clear log lines in view
+- Added scroll-to-bottom pill for fast scrolling to new log entries
+- Added marker line feature to track new log additions
+- Added container filtering to logs fetching for all pods
 
 ### Improvements
-- Warning color changed to yellow (was red in some places)
-- YAML search cleanup when switching resource
+- Refactored log fetching logic to use shared helper for improved readability and maintainability
+- Enhanced log fetching by using workload label selectors
 
 ### Bug Fixes
-- Fixed false "Cluster Context Changed Externally" error
+- None
 
 ### Breaking Changes
 - None
