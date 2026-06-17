@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom';
 import { useStore } from '../store';
 import { RefreshCw, Search, X, AlertTriangle, Calendar, Download, Play, Pause, Minus } from 'lucide-react';
 import { kubectl } from '../services/kubectl';
+import { ScrollToBottomPill } from './ScrollToBottomPill';
 
 // Maximum number of log lines to keep in memory
 const MAX_LOG_LINES = 5000;
@@ -287,6 +288,9 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
 
     // Track scroll position per tab
     const scrollPositionPerTab = useRef<Map<string, { scrollTop: number; scrollLeft: number }>>(new Map());
+
+    // Scroll-to-bottom pill state
+    const [newLogsCount, setNewLogsCount] = useState(0);
 
     // Update available deployments when state changes (includes Deployments, DaemonSets, and StatefulSets)
     useEffect(() => {
@@ -687,6 +691,11 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
                                 logsContainerRef.current.style.scrollBehavior = oldBehavior;
                             }
                         });
+                    }
+
+                    // Track new log count for scroll-to-bottom pill
+                    if (!isScrolledToBottomRef.current) {
+                        setNewLogsCount(prev => prev + newLines.length);
                     }
                 }
             } else {
@@ -1217,7 +1226,7 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
 
     return (
         <>
-            <div className={`flex flex-col overflow-hidden ${standalone ? 'h-full' : 'flex-1'} z-[110]`}>
+            <div className={`flex flex-col overflow-hidden ${standalone ? 'h-full' : 'flex-1'} relative z-[110]`}>
                 {/* Logs controls */}
                 <div className="flex flex-wrap items-center gap-3 px-4 py-2 bg-gray-900/50 border-b border-gray-800">
                     <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0 z-[110]">
@@ -1579,6 +1588,12 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
                         <div className="text-gray-500 italic">No logs available or container not running.</div>
                     )}
                 </div>
+
+                <ScrollToBottomPill
+                    containerRef={logsContainerRef}
+                    newLogCount={newLogsCount}
+                    onReset={() => setNewLogsCount(0)}
+                />
             </div>
 
             {/* Auto-refresh control panel - rendered as portal to escape stacking context */}
