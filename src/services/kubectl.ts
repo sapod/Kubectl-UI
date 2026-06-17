@@ -567,9 +567,9 @@ export const kubectl = {
         return [(e as any).message || "Failed to fetch logs"];
       }
   },
-  getDeploymentLogs: async (deploymentName: string, ns: string, grep?: string, dateFrom?: string, dateTo?: string, unlimited?: boolean): Promise<string[]> => {
+  getDeploymentLogs: async (selector: string, ns: string, grep?: string, dateFrom?: string, dateTo?: string, unlimited?: boolean): Promise<string[]> => {
       try {
-        const data = await executeWithVerification(KUBECTL_COMMANDS.logsWithSelector, [`release=${deploymentName}`, ns, grep, dateFrom, dateTo, unlimited], false);
+        const data = await executeWithVerification(KUBECTL_COMMANDS.logsWithSelector, [selector, ns, grep, dateFrom, dateTo, unlimited], false);
         return typeof data === 'string' ? data.split('\n').filter(line => line.trim() !== '') : [];
       } catch (e) {
         return [(e as any).message || "Failed to fetch deployment logs"];

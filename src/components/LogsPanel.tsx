@@ -58,6 +58,22 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
         dispatch({ type: 'UPDATE_LOGS_TAB', payload: { tabId: currentTabId, updates } });
     };
 
+    // Build a kubectl label selector string from the workload's matchLabels
+    const buildWorkloadSelector = (namespace: string, workloadName: string): string | null => {
+        const deployment = state.deployments.find(d => d.name === workloadName && d.namespace === namespace);
+        const daemonSet = state.daemonSets.find(ds => ds.name === workloadName && ds.namespace === namespace);
+        const statefulSet = state.statefulSets.find(ss => ss.name === workloadName && ss.namespace === namespace);
+        const workload = deployment || daemonSet || statefulSet;
+
+        if (workload?.selector && Object.keys(workload.selector).length > 0) {
+            return Object.entries(workload.selector)
+                .map(([key, value]) => `${key}=${value}`)
+                .join(',');
+        }
+
+        return null;
+    };
+
 
     // Logs state - use a Map to store logs per tab, so each tab has its own logs
     // Initialize from localStorage if in undocked mode
@@ -561,7 +577,7 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
             scrollPositionBeforeFetchRef.current = null;
         }
 
-        const [namespace, depName] = latest.deployment.split('/');
+        const [namespace, workloadName] = latest.deployment.split('/');
 
         // Helper function to process fetched logs (common logic for both cases)
         const processLogs = (lines: string[]) => {
@@ -634,8 +650,10 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
             let lines: string[];
 
             if (latest.pod === 'all-pods') {
-                // Fetch all pods logs for deployment
-                lines = await kubectl.getDeploymentLogs(depName, namespace, searchQuery, appliedDateFrom, appliedDateTo);
+                // Fetch all pods logs using workload's label selector
+                const selector = buildWorkloadSelector(namespace, workloadName);
+                if (!selector) return;
+                lines = await kubectl.getDeploymentLogs(selector, namespace, searchQuery, appliedDateFrom, appliedDateTo);
             } else {
                 // Regular pod logs
                 if (!latest.pod || !latest.container) return;
@@ -690,12 +708,14 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
 
         setDownloadingLogs(true);
         try {
-            const [namespace, depName] = selectedWorkload.split('/');
+            const [namespace, workloadName] = selectedWorkload.split('/');
             let lines: string[];
 
             // Fetch all logs with unlimited flag
             if (selectedPod === 'all-pods') {
-                lines = await kubectl.getDeploymentLogs(depName, namespace, searchQuery, appliedDateFrom, appliedDateTo, true);
+                const selector = buildWorkloadSelector(namespace, workloadName);
+                if (!selector) return;
+                lines = await kubectl.getDeploymentLogs(selector, namespace, searchQuery, appliedDateFrom, appliedDateTo, true);
             } else if (selectedPod && selectedContainer) {
                 const [podNamespace, podName] = selectedPod.split('/');
 
@@ -717,7 +737,7 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
 
             // Create filename with timestamp and filter info
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-            const resourceName = selectedPod === 'all-pods' ? depName : selectedPod.split('/')[1];
+            const resourceName = selectedPod === 'all-pods' ? workloadName : selectedPod.split('/')[1];
             const filterSuffix = searchQuery ? `-filtered` : '';
             const filename = `${resourceName}${filterSuffix}-${timestamp}.log`;
 
