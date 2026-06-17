@@ -88,8 +88,9 @@ export const KUBECTL_COMMANDS: Record<string, CommandDefinition> = {
 
     return cmd;
   }, shouldVerify: false },
-  logsWithSelector: { command: (selector: string, ns: string, grep?: string, dateFrom?: string, dateTo?: string, unlimited?: boolean) => {
-    let cmd = `kubectl logs -l ${selector} -n ${ns} --all-containers=true --prefix=true ${unlimited ? '--tail=-1' : '--tail=100'} --timestamps`;
+  logsWithSelector: { command: (selector: string, ns: string, container?: string, grep?: string, dateFrom?: string, dateTo?: string, unlimited?: boolean) => {
+    const containerFlag = container ? `-c ${container}` : '--all-containers=true';
+    let cmd = `kubectl logs -l ${selector} -n ${ns} ${containerFlag} --prefix=true ${unlimited ? '--tail=-1' : '--tail=100'} --timestamps`;
 
     // Add date filter if provided
     if (dateFrom) {
@@ -567,9 +568,9 @@ export const kubectl = {
         return [(e as any).message || "Failed to fetch logs"];
       }
   },
-  getDeploymentLogs: async (selector: string, ns: string, grep?: string, dateFrom?: string, dateTo?: string, unlimited?: boolean): Promise<string[]> => {
+  getDeploymentLogs: async (selector: string, ns: string, container?: string, grep?: string, dateFrom?: string, dateTo?: string, unlimited?: boolean): Promise<string[]> => {
       try {
-        const data = await executeWithVerification(KUBECTL_COMMANDS.logsWithSelector, [selector, ns, grep, dateFrom, dateTo, unlimited], false);
+        const data = await executeWithVerification(KUBECTL_COMMANDS.logsWithSelector, [selector, ns, container, grep, dateFrom, dateTo, unlimited], false);
         return typeof data === 'string' ? data.split('\n').filter(line => line.trim() !== '') : [];
       } catch (e) {
         return [(e as any).message || "Failed to fetch deployment logs"];

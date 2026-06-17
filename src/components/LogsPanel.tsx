@@ -7,6 +7,26 @@ import { kubectl } from '../services/kubectl';
 // Maximum number of log lines to keep in memory
 const MAX_LOG_LINES = 5000;
 
+const matchesSelector = (podLabels: Record<string, string> | undefined, selector: Record<string, string> | undefined) => {
+    if (!podLabels || !selector) return false;
+    return Object.entries(selector).every(([key, value]) => podLabels[key] === value);
+};
+
+const resolveWorkload = (
+    selectedWorkload: string,
+    deployments: { name: string; namespace: string; selector: Record<string, string> }[],
+    daemonSets: { name: string; namespace: string; selector: Record<string, string> }[],
+    statefulSets: { name: string; namespace: string; selector: Record<string, string> }[],
+): { namespace: string; workloadName: string; workload: { selector: Record<string, string> } } | null => {
+    if (!selectedWorkload) return null;
+    const [namespace, workloadName] = selectedWorkload.split('/');
+    const workload = deployments.find(d => d.name === workloadName && d.namespace === namespace)
+        || daemonSets.find(ds => ds.name === workloadName && ds.namespace === namespace)
+        || statefulSets.find(ss => ss.name === workloadName && ss.namespace === namespace);
+    if (!workload) return null;
+    return { namespace, workloadName, workload };
+};
+
 interface LogsPanelProps {
     /** If true, shows as standalone mode (for window). If false, docked in terminal panel */
     standalone?: boolean;
@@ -514,6 +534,20 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
         };
     }, [selectedWorkload, selectedPod, selectedContainer, currentTabId]);
 
+    // Collect all unique containers from all pods in the workload (for all-pods mode)
+    const allWorkloadContainers = React.useMemo(() => {
+        const resolved = resolveWorkload(selectedWorkload, state.deployments, state.daemonSets, state.statefulSets);
+        if (!resolved?.workload.selector) return [];
+        const { namespace, workload } = resolved;
+
+        const firstPod = state.pods.find(statePod => {
+            if (statePod.namespace !== namespace) return false;
+            return matchesSelector(statePod.labels, workload.selector);
+        });
+
+        return firstPod?.containers?.map(c => c.name).sort() ?? [];
+    }, [selectedWorkload, state.pods, state.deployments, state.daemonSets, state.statefulSets]);
+
     // Fetch logs function
     const fetchLogs = async () => {
         // Use the latest values from ref to avoid stale closures
@@ -650,10 +684,10 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
             let lines: string[];
 
             if (latest.pod === 'all-pods') {
-                // Fetch all pods logs using workload's label selector
+                // Fetch all pods logs using workload's label selector, optionally filtered by container
                 const selector = buildWorkloadSelector(namespace, workloadName);
                 if (!selector) return;
-                lines = await kubectl.getDeploymentLogs(selector, namespace, searchQuery, appliedDateFrom, appliedDateTo);
+                lines = await kubectl.getDeploymentLogs(selector, namespace, latest.container || undefined, searchQuery, appliedDateFrom, appliedDateTo);
             } else {
                 // Regular pod logs
                 if (!latest.pod || !latest.container) return;
@@ -715,7 +749,7 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
             if (selectedPod === 'all-pods') {
                 const selector = buildWorkloadSelector(namespace, workloadName);
                 if (!selector) return;
-                lines = await kubectl.getDeploymentLogs(selector, namespace, searchQuery, appliedDateFrom, appliedDateTo, true);
+                lines = await kubectl.getDeploymentLogs(selector, namespace, selectedContainer || undefined, searchQuery, appliedDateFrom, appliedDateTo, true);
             } else if (selectedPod && selectedContainer) {
                 const [podNamespace, podName] = selectedPod.split('/');
 
@@ -1190,22 +1224,9 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
                                 <>
                                     <option value="all-pods">All Pods (Aggregated)</option>
                                     {(() => {
-                                        const [namespace, workloadName] = selectedWorkload.split('/');
-
-                                        // Find the workload in any of the three types
-                                        const deployment = state.deployments.find(d => d.name === workloadName && d.namespace === namespace);
-                                        const daemonSet = state.daemonSets.find(ds => ds.name === workloadName && ds.namespace === namespace);
-                                        const statefulSet = state.statefulSets.find(ss => ss.name === workloadName && ss.namespace === namespace);
-
-                                        const workload = deployment || daemonSet || statefulSet;
-
-                                        if (!workload) return null;
-
-                                        // Helper function to check if pod labels match workload selector
-                                        const matchesSelector = (podLabels: Record<string, string> | undefined, selector: Record<string, string> | undefined) => {
-                                            if (!podLabels || !selector) return false;
-                                            return Object.entries(selector).every(([key, value]) => podLabels[key] === value);
-                                        };
+                                        const resolved = resolveWorkload(selectedWorkload, state.deployments, state.daemonSets, state.statefulSets);
+                                        if (!resolved) return null;
+                                        const { namespace, workload } = resolved;
 
                                         const filteredPods = state.pods.filter(statePod => {
                                             if (statePod.namespace !== namespace) return false;
@@ -1259,6 +1280,22 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ standalone = false, tabId 
                                     return null;
                                 })()}
                             </>
+                        )}
+
+                        {selectedWorkload && selectedPod === 'all-pods' && allWorkloadContainers.length > 0 && (
+                            <label className="flex items-center gap-2">
+                                <span className="text-xs text-gray-400 font-medium ml-2">Container:</span>
+                                <select
+                                    className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-blue-500"
+                                    value={selectedContainer}
+                                    onChange={(e) => updateLogsState({ selectedContainer: e.target.value })}
+                                >
+                                    <option value="">All Containers</option>
+                                    {allWorkloadContainers.map(containerName => (
+                                        <option key={containerName} value={containerName}>{containerName}</option>
+                                    ))}
+                                </select>
+                            </label>
                         )}
 
                         {/* Action buttons group */}
